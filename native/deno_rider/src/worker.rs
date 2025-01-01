@@ -1,27 +1,19 @@
 use crate::atoms;
 use crate::error::Error;
 use deno_runtime::worker::MainWorker;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::string::String;
 use tokio::sync::oneshot::Sender;
 use uuid::Uuid;
 struct IsolateInstance {
     name: String,
-    isolate: Option<deno_core::v8::OwnedIsolate>,
+    isolate: deno_core::v8::OwnedIsolate,
     context: deno_core::v8::Global<deno_core::v8::Context>,
 }
 
 struct WorkerState {
     isolates: Vec<(String, IsolateInstance)>,
     isolate_map: HashMap<String, usize>,
-}
-
-impl Drop for WorkerState {
-    fn drop(&mut self) {
-        for (_, instance) in self.isolates.iter_mut().rev() {
-            instance.isolate.take();
-        }
-    }
 }
 
 pub enum Message {
@@ -38,12 +30,6 @@ deno_core::extension!(
     esm = [dir "extension", "main.js"]
 );
 
-fn cleanup_isolates(isolates: &mut Vec<(String, IsolateInstance)>) {
-    for (_, instance) in isolates.iter_mut().rev() {
-        instance.isolate.take();
-    }
-    isolates.clear();
-}
 pub async fn new(main_module_path: String) -> Result<MainWorker, Error> {
     let path = std::env::current_dir().unwrap().join(main_module_path);
     let main_module = deno_core::ModuleSpecifier::from_file_path(path).unwrap();
@@ -109,7 +95,7 @@ pub async fn run(
 
                         state.isolates.push((isolate_id.clone(), IsolateInstance {
                             name,
-                            isolate: Some(isolate),
+                            isolate: isolate,
                             context,
                         }));
                         state.isolate_map.insert(isolate_id.clone(), state.isolates.len() - 1);
@@ -132,20 +118,16 @@ pub async fn run(
                     },
                     Message::DisposeIsolate(isolate_id, response_sender) => {
                         if let Some(&idx) = state.isolate_map.get(&isolate_id) {
-                            // Check if this is the last created isolate
                             if idx == state.isolates.len() - 1 {
-                                if let Some((_, ref mut instance)) = state.isolates.get_mut(idx) {
-                                    instance.isolate.take();
-                                    state.isolates.pop();
+                                if let Some((_, instance)) = state.isolates.pop() {
+                                    drop(instance.isolate);
                                     state.isolate_map.remove(&isolate_id);
                                     response_sender.send(Ok(())).unwrap();
                                 }
                             } else {
-                                // Get the ID of the next disposable isolate
                                 let next_disposable = state.isolates.last()
                                     .map(|(id, _)| id.clone())
                                     .unwrap_or_default();
-
                                 response_sender.send(Err(Error {
                                     message: Some(format!("Isolate {} must be disposed first", next_disposable)),
                                     name: atoms::execution_error(),
@@ -154,9 +136,8 @@ pub async fn run(
                         }
                     },
                     Message::Stop(response_sender) => {
-                        // Dispose isolates in reverse order
-                        while let Some((_, mut instance)) = state.isolates.pop() {
-                            instance.isolate.take();
+                        while let Some((_, instance)) = state.isolates.pop() {
+                            drop(instance.isolate);
                         }
                         worker_receiver.close();
                         response_sender.send(()).unwrap();
@@ -206,42 +187,32 @@ pub async fn run(
             }
         }
     }
-
-    cleanup_isolates(&mut state.isolates);
 }
 
 fn execute_in_isolate(instance: &mut IsolateInstance, code: &str) -> Result<String, Error> {
-    if let Some(isolate) = &mut instance.isolate {
-        let mut handle_scope = deno_core::v8::HandleScope::new(isolate);
-        let context = deno_core::v8::Local::new(&mut handle_scope, &instance.context);
-        let mut scope = deno_core::v8::ContextScope::new(&mut handle_scope, context);
+    let mut handle_scope = deno_core::v8::HandleScope::new(&mut instance.isolate);
+    let context = deno_core::v8::Local::new(&mut handle_scope, &instance.context);
+    let mut scope = deno_core::v8::ContextScope::new(&mut handle_scope, context);
 
-        let code = deno_core::v8::String::new(&mut scope, code).ok_or_else(|| Error {
-            message: Some("Failed to create V8 string".to_string()),
-            name: atoms::execution_error(),
-        })?;
+    let code = deno_core::v8::String::new(&mut scope, code).ok_or_else(|| Error {
+        message: Some("Failed to create V8 string".to_string()),
+        name: atoms::execution_error(),
+    })?;
 
-        let script =
-            deno_core::v8::Script::compile(&mut scope, code, None).ok_or_else(|| Error {
-                message: Some("Failed to compile script".to_string()),
-                name: atoms::execution_error(),
-            })?;
+    let script = deno_core::v8::Script::compile(&mut scope, code, None).ok_or_else(|| Error {
+        message: Some("Failed to compile script".to_string()),
+        name: atoms::execution_error(),
+    })?;
 
-        let result = script.run(&mut scope).ok_or_else(|| Error {
-            message: Some("Failed to run script".to_string()),
-            name: atoms::execution_error(),
-        })?;
+    let result = script.run(&mut scope).ok_or_else(|| Error {
+        message: Some("Failed to run script".to_string()),
+        name: atoms::execution_error(),
+    })?;
 
-        let json: serde_json::Value = serde_v8::from_v8(&mut scope, result).map_err(|_| Error {
-            message: None,
-            name: atoms::conversion_error(),
-        })?;
+    let json: serde_json::Value = serde_v8::from_v8(&mut scope, result).map_err(|_| Error {
+        message: None,
+        name: atoms::conversion_error(),
+    })?;
 
-        Ok(json.to_string())
-    } else {
-        Err(Error {
-            message: Some("Isolate has been disposed".to_string()),
-            name: atoms::execution_error(),
-        })
-    }
+    Ok(json.to_string())
 }
