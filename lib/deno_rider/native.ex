@@ -20,6 +20,8 @@ defmodule DenoRider.Native do
 
   def stop_runtime(_reference), do: :erlang.nif_error(:nif_not_loaded)
 
+  def reset_runtime(_reference), do: :erlang.nif_error(:nif_not_loaded)
+
   def eval(_from, _reference, _code), do: :erlang.nif_error(:nif_not_loaded)
 
   def eval_blocking(_reference, _code), do: :erlang.nif_error(:nif_not_loaded)

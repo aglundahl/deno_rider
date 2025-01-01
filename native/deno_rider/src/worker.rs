@@ -7,6 +7,7 @@ use tokio::sync::oneshot::Sender;
 pub enum Message {
     Execute(String, Sender<Result<String, Error>>),
     Stop(Sender<()>),
+    Reset(Sender<Result<(), Error>>),
 }
 
 deno_core::extension!(
@@ -45,6 +46,7 @@ pub async fn new(main_module_path: String) -> Result<MainWorker, Error> {
             ..Default::default()
         },
     );
+
     worker
         .execute_main_module(&main_module)
         .await
@@ -68,6 +70,17 @@ pub async fn run(
                         worker_receiver.close();
                         response_sender.send(()).unwrap();
                         break;
+                    },
+                    Message::Reset(response_sender) => {
+                        match reset_worker_state(&mut worker).await {
+                            Ok(()) => {
+                                response_sender.send(Ok(())).unwrap();
+                            },
+                            Err(error) => {
+                                response_sender.send(Err(error)).unwrap();
+                            }
+                        }
+                        poll_worker = true;
                     },
                     Message::Execute(code, response_sender) => {
                         match worker.execute_script("<anon>", code.into()) {
@@ -113,4 +126,45 @@ pub async fn run(
             }
         }
     }
+}
+
+pub async fn reset_worker_state(worker: &mut MainWorker) -> Result<(), Error> {
+    let cleanup_script = r#"
+    let DONT_TOUCH = [
+      "Deno",            "EventSource",
+      "alert",           "atob",
+      "btoa",            "caches",
+      "clearInterval",   "clearTimeout",
+      "close",           "closed",
+      "confirm",         "createImageBitmap",
+      "crypto",          "fetch",
+      "localStorage",
+      "name",            "navigator",
+      "onbeforeunload",  "onerror",
+      "onload",          "onunhandledrejection",
+      "onunload",        "performance",
+      "process",         "prompt",
+      "queueMicrotask",  "reportError",
+      "self",            "sessionStorage",
+      "setInterval",     "setTimeout",
+      "structuredClone"
+      ]
+
+      for (let prop of Object.keys(globalThis)) {
+        // console.log('found ' + prop);
+        if (!DONT_TOUCH.includes(prop)) {
+          delete globalThis[prop];
+        }
+      }
+    "#
+    .to_string();
+
+    worker
+        .execute_script("<reset>", cleanup_script.into())
+        .map_err(|error| Error {
+            message: Some(error.to_string()),
+            name: atoms::execution_error(),
+        })?;
+
+    Ok(())
 }

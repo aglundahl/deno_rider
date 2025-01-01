@@ -153,7 +153,33 @@ defmodule DenoRiderTest do
     assert {:error, %Error{name: :dead_runtime_error}} = stop_runtime(runtime) |> Task.await()
   end
 
-  @tag :panic
+  test "reset runtime" do
+    {:ok, runtime} = start_runtime() |> Task.await()
+
+    eval(
+      """
+      let localVar = 999;
+      globalThis.foo = 111;
+      // console.log(globalThis.foo);
+      """,
+      blocking: true,
+      runtime: runtime
+    )
+    |> IO.inspect(label: :before_reset)
+
+    assert {:ok, nil} = reset_runtime(runtime) |> Task.await()
+
+    eval(
+      """
+      //localVar
+      globalThis.foo;
+      """,
+      blocking: true,
+      runtime: runtime
+    )
+    |> IO.inspect(label: :after_reset)
+  end
+
   test "kill runtime" do
     {:ok, runtime} = start_runtime() |> Task.await()
 
