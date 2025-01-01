@@ -220,7 +220,7 @@ fn dispose_isolate(
             .is_ok()
         {
             match response_receiver.await {
-                Ok(_) => util::send_to_pid(&pid, atoms::ok()).unwrap(),
+                Ok(result) => util::send_to_pid(&pid, result).unwrap(),
                 Err(_) => util::send_to_pid(
                     &pid,
                     error::Error {
