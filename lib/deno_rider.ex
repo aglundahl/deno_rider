@@ -121,6 +121,69 @@ defmodule DenoRider do
     Keyword.get(opts, :name, __MODULE__) |> GenServer.call({:eval, code, opts})
   end
 
+  ### ISOLATES
+
+  @doc """
+  Create a new V8 isolate with the given name.
+
+  ## Examples
+
+      iex> {:ok, runtime} = DenoRider.start_runtime() |> Task.await()
+      iex> {:ok, _isolate_id} = DenoRider.create_isolate(runtime, "my-isolate") |> Task.await()
+  """
+  def create_isolate(runtime, name) do
+    Task.async(fn ->
+      :ok = Native.create_isolate(runtime.reference, name)
+
+      receive do
+        {:ok, isolate_id} -> {:ok, isolate_id}
+        error -> error
+      end
+    end)
+  end
+
+  @doc """
+  Execute code in a specific isolate.
+
+  ## Examples
+
+      iex> {:ok, runtime} = DenoRider.start_runtime() |> Task.await()
+      iex> {:ok, isolate_id} = DenoRider.create_isolate(runtime, "my-isolate") |> Task.await()
+      iex> DenoRider.eval_in_isolate(runtime, isolate_id, "1 + 2") |> Task.await()
+      {:ok, 3}
+  """
+  def eval_in_isolate(runtime, isolate_id, code) do
+    Task.async(fn ->
+      :ok = Native.eval_in_isolate(nil, runtime.reference, isolate_id, code)
+
+      receive do
+        {:eval_reply, nil, {:ok, json}} -> Jason.decode(json)
+        {:eval_reply, nil, error} -> error
+      end
+    end)
+  end
+
+  @doc """
+  Dispose of a V8 isolate.
+
+  ## Examples
+
+      iex> {:ok, runtime} = DenoRider.start_runtime() |> Task.await()
+      iex> {:ok, isolate_id} = DenoRider.create_isolate(runtime, "my-isolate") |> Task.await()
+      iex> DenoRider.dispose_isolate(runtime, isolate_id) |> Task.await()
+      {:ok, nil}
+  """
+  def dispose_isolate(runtime, isolate_id) do
+    Task.async(fn ->
+      :ok = Native.dispose_isolate(runtime.reference, isolate_id)
+
+      receive do
+        :ok -> {:ok, nil}
+        error -> error
+      end
+    end)
+  end
+
   @doc """
   Start a JavaScript runtime and return a `Task` that finishes when runtime has
   started.

@@ -1,13 +1,24 @@
 use crate::atoms;
 use crate::error::Error;
 use deno_runtime::worker::MainWorker;
+use std::collections::HashMap;
 use std::string::String;
 use tokio::sync::oneshot::Sender;
+use uuid::Uuid;
+
+struct IsolateInstance {
+    name: String,
+    isolate: deno_core::v8::OwnedIsolate,
+    context: deno_core::v8::Global<deno_core::v8::Context>,
+}
 
 pub enum Message {
     Execute(String, Sender<Result<String, Error>>),
     Stop(Sender<()>),
     Reset(Sender<Result<(), Error>>),
+    CreateIsolate(String, Sender<Result<String, Error>>),
+    ExecuteInIsolate(String, String, Sender<Result<String, Error>>),
+    DisposeIsolate(String, Sender<Result<(), Error>>),
 }
 
 deno_core::extension!(
@@ -61,11 +72,50 @@ pub async fn run(
     mut worker: MainWorker,
     mut worker_receiver: tokio::sync::mpsc::UnboundedReceiver<Message>,
 ) -> () {
+    let mut isolates = HashMap::new();
     let mut poll_worker = true;
     loop {
         tokio::select! {
             Some(message) = worker_receiver.recv() => {
                 match message {
+                    Message::CreateIsolate(name, response_sender) => {
+                        let isolate_id = Uuid::new_v4().to_string();
+                        let mut isolate = deno_core::v8::Isolate::new(Default::default());
+                        let context = {
+                            let mut handle_scope = deno_core::v8::HandleScope::new(&mut isolate);
+                            let context = deno_core::v8::Context::new(&mut handle_scope, Default::default());
+                            deno_core::v8::Global::new(&mut handle_scope, context)
+                        };
+
+                        isolates.insert(isolate_id.clone(), IsolateInstance {
+                            name,
+                            isolate: isolate.into(),
+                            context,
+                        });
+
+                        response_sender.send(Ok(isolate_id)).unwrap();
+                    },
+                    Message::ExecuteInIsolate(isolate_id, code, response_sender) => {
+                        if let Some(instance) = isolates.get_mut(&isolate_id) {
+                            let result = execute_in_isolate(instance, &code);
+                            response_sender.send(result).unwrap();
+                        } else {
+                            response_sender.send(Err(Error {
+                                message: Some("Isolate not found".to_string()),
+                                name: atoms::execution_error(),
+                            })).unwrap();
+                        }
+                    },
+                    Message::DisposeIsolate(isolate_id, response_sender) => {
+                        if isolates.remove(&isolate_id).is_some() {
+                            response_sender.send(Ok(())).unwrap();
+                        } else {
+                            response_sender.send(Err(Error {
+                                message: Some("Isolate not found".to_string()),
+                                name: atoms::execution_error(),
+                            })).unwrap();
+                        }
+                    },
                     Message::Stop(response_sender) => {
                         worker_receiver.close();
                         response_sender.send(()).unwrap();
@@ -167,4 +217,32 @@ pub async fn reset_worker_state(worker: &mut MainWorker) -> Result<(), Error> {
         })?;
 
     Ok(())
+}
+
+fn execute_in_isolate(instance: &mut IsolateInstance, code: &str) -> Result<String, Error> {
+    let mut handle_scope = deno_core::v8::HandleScope::new(&mut instance.isolate);
+    let context = deno_core::v8::Local::new(&mut handle_scope, &instance.context);
+    let mut scope = deno_core::v8::ContextScope::new(&mut handle_scope, context);
+
+    let code = deno_core::v8::String::new(&mut scope, code).ok_or_else(|| Error {
+        message: Some("Failed to create V8 string".to_string()),
+        name: atoms::execution_error(),
+    })?;
+
+    let script = deno_core::v8::Script::compile(&mut scope, code, None).ok_or_else(|| Error {
+        message: Some("Failed to compile script".to_string()),
+        name: atoms::execution_error(),
+    })?;
+
+    let result = script.run(&mut scope).ok_or_else(|| Error {
+        message: Some("Failed to run script".to_string()),
+        name: atoms::execution_error(),
+    })?;
+
+    let json: serde_json::Value = serde_v8::from_v8(&mut scope, result).map_err(|_| Error {
+        message: None,
+        name: atoms::conversion_error(),
+    })?;
+
+    Ok(json.to_string())
 }

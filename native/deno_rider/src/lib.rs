@@ -173,6 +173,109 @@ fn eval_blocking(
     }
 }
 
+#[rustler::nif]
+fn create_isolate(
+    env: Env,
+    resource: ResourceArc<runtime::Runtime>,
+    name: String,
+) -> rustler::Atom {
+    let pid = env.pid();
+    let worker_sender = resource.worker_sender.clone();
+    tokio_runtime::RUNTIME.spawn(async move {
+        let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
+        if worker_sender
+            .send(worker::Message::CreateIsolate(name, response_sender))
+            .is_ok()
+        {
+            match response_receiver.await {
+                Ok(result) => util::send_to_pid(&pid, result).unwrap(),
+                Err(_) => util::send_to_pid(
+                    &pid,
+                    error::Error {
+                        message: None,
+                        name: atoms::execution_error(),
+                    },
+                )
+                .unwrap(),
+            }
+        }
+    });
+    atoms::ok()
+}
+
+#[rustler::nif]
+fn eval_in_isolate(
+    env: Env,
+    from: rustler::Term,
+    resource: ResourceArc<runtime::Runtime>,
+    isolate_id: String,
+    code: String,
+) -> rustler::Atom {
+    let pid = env.pid();
+    let worker_sender = resource.worker_sender.clone();
+    let from_env = rustler::OwnedEnv::new();
+    let saved_from = from_env.save(from);
+    tokio_runtime::RUNTIME.spawn(async move {
+        let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
+        let result: Result<String, error::Error>;
+        if worker_sender
+            .send(worker::Message::ExecuteInIsolate(
+                isolate_id,
+                code,
+                response_sender,
+            ))
+            .is_ok()
+        {
+            result = match response_receiver.await {
+                Ok(result) => result,
+                Err(_) => Err(error::Error {
+                    message: None,
+                    name: atoms::execution_error(),
+                }),
+            };
+        } else {
+            result = Err(error::Error {
+                message: None,
+                name: atoms::dead_runtime_error(),
+            });
+        };
+        from_env.run(|env| {
+            util::send_to_pid(&pid, (atoms::eval_reply(), saved_from.load(env), result)).unwrap();
+        });
+    });
+    atoms::ok()
+}
+
+#[rustler::nif]
+fn dispose_isolate(
+    env: Env,
+    resource: ResourceArc<runtime::Runtime>,
+    isolate_id: String,
+) -> rustler::Atom {
+    let pid = env.pid();
+    let worker_sender = resource.worker_sender.clone();
+    tokio_runtime::RUNTIME.spawn(async move {
+        let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
+        if worker_sender
+            .send(worker::Message::DisposeIsolate(isolate_id, response_sender))
+            .is_ok()
+        {
+            match response_receiver.await {
+                Ok(_) => util::send_to_pid(&pid, atoms::ok()).unwrap(),
+                Err(_) => util::send_to_pid(
+                    &pid,
+                    error::Error {
+                        message: None,
+                        name: atoms::execution_error(),
+                    },
+                )
+                .unwrap(),
+            }
+        }
+    });
+    atoms::ok()
+}
+
 fn load(env: Env, _term: rustler::Term) -> bool {
     env.register::<runtime::Runtime>().is_ok()
 }

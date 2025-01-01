@@ -25,4 +25,12 @@ defmodule DenoRider.Native do
   def eval(_from, _reference, _code), do: :erlang.nif_error(:nif_not_loaded)
 
   def eval_blocking(_reference, _code), do: :erlang.nif_error(:nif_not_loaded)
+
+  def create_isolate(_reference, _name), do: :erlang.nif_error(:nif_not_loaded)
+
+  def dispose_isolate(_reference, _isolate_id), do: :erlang.nif_error(:nif_not_loaded)
+
+  # In DenoRider.Native
+  def eval_in_isolate(_from, _reference, _isolate_id, _code),
+    do: :erlang.nif_error(:nif_not_loaded)
 end
