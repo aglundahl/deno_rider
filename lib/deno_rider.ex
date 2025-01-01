@@ -237,21 +237,6 @@ defmodule DenoRider do
     end)
   end
 
-  @spec reset_runtime(Runtime.t()) :: Task.t()
-  def reset_runtime(runtime) do
-    Task.async(fn ->
-      :ok = Native.reset_runtime(runtime.reference)
-
-      receive do
-        :ok ->
-          {:ok, nil}
-
-        error ->
-          error
-      end
-    end)
-  end
-
   @impl GenServer
   def init(initial_arg) do
     {:ok, initial_arg}

@@ -73,47 +73,6 @@ fn stop_runtime(env: Env, resource: ResourceArc<runtime::Runtime>) -> rustler::A
 }
 
 #[rustler::nif]
-fn reset_runtime(env: Env, resource: ResourceArc<runtime::Runtime>) -> rustler::Atom {
-    let pid = env.pid();
-    let worker_sender = resource.worker_sender.clone();
-    tokio_runtime::RUNTIME.spawn(async move {
-        let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
-        if worker_sender
-            .send(worker::Message::Reset(response_sender))
-            .is_ok()
-        {
-            match response_receiver.await {
-                Ok(_) => util::send_to_pid(&pid, atoms::ok()).unwrap(),
-                Err(_) => util::send_to_pid(
-                    &pid,
-                    (
-                        atoms::error(),
-                        error::Error {
-                            message: None,
-                            name: atoms::execution_error(),
-                        },
-                    ),
-                )
-                .unwrap(),
-            }
-        } else {
-            util::send_to_pid(
-                &pid,
-                (
-                    atoms::error(),
-                    error::Error {
-                        message: None,
-                        name: atoms::dead_runtime_error(),
-                    },
-                ),
-            )
-            .unwrap();
-        }
-    });
-    atoms::ok()
-}
-
-#[rustler::nif]
 fn eval(
     env: Env,
     from: rustler::Term,
