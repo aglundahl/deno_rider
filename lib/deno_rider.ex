@@ -79,29 +79,46 @@ defmodule DenoRider do
   """
   @spec eval(binary(), Keyword.t()) :: {:ok, term()} | {:error, Error.t()} | Task.t()
   def eval(code, opts) do
-    if runtime = Keyword.get(opts, :runtime) do
-      if Keyword.get(opts, :blocking, false) do
-        with {:ok, json} <- Native.eval_blocking(runtime.reference, code) do
-          Jason.decode(json)
-        end
-      else
-        # credo:disable-for-next-line Credo.Check.Refactor.Nesting
-        Task.async(fn ->
-          :ok = Native.eval(nil, runtime.reference, code)
+    runtime = Keyword.get(opts, :runtime)
+    blocking = Keyword.get(opts, :blocking, false)
 
-          receive do
-            {:eval_reply, nil, {:ok, json}} ->
-              Jason.decode(json)
+    case {runtime, blocking} do
+      {nil, true} ->
+        eval_implicit(code, opts)
 
-            {:eval_reply, nil, error} ->
-              error
-          end
-        end)
-      end
-    else
-      Keyword.get(opts, :name, __MODULE__)
-      |> GenServer.call({:eval, code, opts})
+      {nil, false} ->
+        eval_implicit(code, opts)
+
+      {runtime, true} ->
+        eval_runtime_blocking(runtime, code)
+
+      {runtime, false} ->
+        eval_runtime_non_blocking(runtime, code)
     end
+  end
+
+  defp eval_runtime_blocking(runtime, code) do
+    with {:ok, json} <- Native.eval_blocking(runtime.reference, code) do
+      Jason.decode(json)
+    end
+  end
+
+  defp eval_runtime_non_blocking(runtime, code) do
+    Task.async(fn ->
+      :ok = Native.eval(nil, runtime.reference, code)
+
+      receive do
+        {:eval_reply, nil, {:ok, json}} ->
+          Jason.decode(json)
+
+        {:eval_reply, nil, error} ->
+          error
+      end
+    end)
+  end
+
+  defp eval_implicit(code, opts) do
+    Keyword.get(opts, :name, __MODULE__) |> GenServer.call({:eval, code, opts})
   end
 
   @doc """
