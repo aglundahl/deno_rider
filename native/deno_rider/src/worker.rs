@@ -1,7 +1,7 @@
 use crate::atoms;
 use crate::error::Error;
 use deno_runtime::worker::MainWorker;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::string::String;
 use tokio::sync::oneshot::Sender;
 use uuid::Uuid;
@@ -73,6 +73,7 @@ pub async fn run(
     mut worker_receiver: tokio::sync::mpsc::UnboundedReceiver<Message>,
 ) -> () {
     let mut isolates = HashMap::new();
+    let mut isolate_order = VecDeque::new();
     let mut poll_worker = true;
     loop {
         tokio::select! {
@@ -89,9 +90,10 @@ pub async fn run(
 
                         isolates.insert(isolate_id.clone(), IsolateInstance {
                             name,
-                            isolate: isolate.into(),
+                            isolate,
                             context,
                         });
+                        isolate_order.push_back(isolate_id.clone());
 
                         response_sender.send(Ok(isolate_id)).unwrap();
                     },
@@ -107,11 +109,13 @@ pub async fn run(
                         }
                     },
                     Message::DisposeIsolate(isolate_id, response_sender) => {
-                        if isolates.remove(&isolate_id).is_some() {
+                        if Some(&isolate_id) == isolate_order.back() {
+                            isolates.remove(&isolate_id);
+                            isolate_order.pop_back();
                             response_sender.send(Ok(())).unwrap();
                         } else {
                             response_sender.send(Err(Error {
-                                message: Some("Isolate not found".to_string()),
+                                message: Some("Isolates must be disposed in reverse order of creation".to_string()),
                                 name: atoms::execution_error(),
                             })).unwrap();
                         }

@@ -30,16 +30,33 @@ defmodule DenoRiderIsolatesTest do
     {:ok, nil} = dispose_isolate(runtime, isolate_id) |> Task.await()
   end
 
+  test "isolates can be disposed in any order" do
+    {:ok, runtime} = start_runtime() |> Task.await()
+    {:ok, isolate1_id} = create_isolate(runtime, "isolate-1") |> Task.await()
+    {:ok, isolate2_id} = create_isolate(runtime, "isolate-2") |> Task.await()
+    {:ok, isolate3_id} = create_isolate(runtime, "isolate-3") |> Task.await()
+
+    {:ok, 2} = eval_in_isolate(runtime, isolate1_id, "1 + 1") |> Task.await()
+
+    {:ok, nil} = dispose_isolate(runtime, isolate1_id) |> Task.await()
+    {:ok, nil} = dispose_isolate(runtime, isolate2_id) |> Task.await()
+    {:ok, nil} = dispose_isolate(runtime, isolate3_id) |> Task.await()
+
+    ## should error out
+    {:ok, 2} = eval_in_isolate(runtime, isolate1_id, "1 + 1") |> Task.await()
+  end
+
   test "isolate error handling" do
     {:ok, runtime} = start_runtime() |> Task.await()
     {:ok, isolate_id} = create_isolate(runtime, "error-test") |> Task.await()
 
     # Test syntax error
     {:error, error} = eval_in_isolate(runtime, isolate_id, "invalid js code!!!") |> Task.await()
-    assert error.name == :execution_error
+
+    assert error.message == "Failed to compile script"
 
     # Test invalid isolate id
     {:error, error} = eval_in_isolate(runtime, "invalid-id", "1 + 1") |> Task.await()
-    assert error.name == :execution_error
+    assert error.message == "Isolate not found"
   end
 end
