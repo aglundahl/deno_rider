@@ -4,9 +4,7 @@ use deno_runtime::worker::MainWorker;
 use std::collections::HashMap;
 use std::string::String;
 use tokio::sync::oneshot::Sender;
-use uuid::Uuid;
 struct IsolateInstance {
-    name: String,
     isolate: deno_core::v8::OwnedIsolate,
     context: deno_core::v8::Global<deno_core::v8::Context>,
 }
@@ -84,8 +82,7 @@ pub async fn run(
         tokio::select! {
             Some(message) = worker_receiver.recv() => {
                 match message {
-                    Message::CreateIsolate(name, response_sender) => {
-                        let isolate_id = Uuid::new_v4().to_string();
+                    Message::CreateIsolate(isolate_id, response_sender) => {
                         let mut isolate = deno_core::v8::Isolate::new(Default::default());
                         let context = {
                             let mut handle_scope = deno_core::v8::HandleScope::new(&mut isolate);
@@ -94,8 +91,7 @@ pub async fn run(
                         };
 
                         state.isolates.push((isolate_id.clone(), IsolateInstance {
-                            name,
-                            isolate: isolate,
+                            isolate,
                             context,
                         }));
                         state.isolate_map.insert(isolate_id.clone(), state.isolates.len() - 1);

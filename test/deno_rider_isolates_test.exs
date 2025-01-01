@@ -46,6 +46,7 @@ defmodule DenoRiderIsolatesTest do
        __struct__: DenoRider.Error
      } = error} = DenoRider.dispose_isolate(runtime, isolate1_id) |> Task.await()
 
+    assert isolate3_id == "isolate-3"
     assert error.message == "Isolate #{isolate3_id} must be disposed first"
 
     ## we dispose isolates correctly

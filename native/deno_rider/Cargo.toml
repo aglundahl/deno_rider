@@ -7,7 +7,6 @@ rustler = "0.35.0"
 serde_json = "1.0.133"
 serde_v8 = "0.227.0"
 tokio = "1.41.1"
-uuid = { version = "1.4", features = ["v4"] }
 
 [lib]
 crate-type = ["cdylib"]
