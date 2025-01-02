@@ -171,7 +171,7 @@ defmodule DenoRider do
       iex> {:ok, runtime} = DenoRider.start_runtime() |> Task.await()
       iex> {:ok, isolate_id} = DenoRider.create_isolate(runtime, "my-isolate") |> Task.await()
       iex> DenoRider.dispose_isolate(runtime, isolate_id) |> Task.await()
-      {:ok, nil}
+      {:ok, {}}
   """
   def dispose_isolate(runtime, isolate_id) do
     Task.async(fn ->
