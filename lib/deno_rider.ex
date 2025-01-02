@@ -154,6 +154,7 @@ defmodule DenoRider do
   """
   def eval_in_isolate(runtime, isolate_id, code) do
     Task.async(fn ->
+      ## In Erlang/Elixir NIFs, when you pass nil as the recipient PID, the message is sent back to the calling process by default.
       :ok = Native.eval_in_isolate(nil, runtime.reference, isolate_id, code)
 
       receive do
