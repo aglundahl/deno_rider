@@ -183,6 +183,11 @@ pub async fn run(
             }
         }
     }
+
+    // just in case we dont properly close the runtime
+    while let Some((_, instance)) = state.isolates.pop() {
+        drop(instance.isolate);
+    }
 }
 
 fn execute_in_isolate(instance: &mut IsolateInstance, code: &str) -> Result<String, Error> {
