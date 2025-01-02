@@ -74,4 +74,26 @@ defmodule DenoRiderIsolatesTest do
     assert error.message == "Isolate not found"
     assert {:ok, nil} = DenoRider.stop_runtime(runtime) |> Task.await()
   end
+
+  test "no sharing of state with the runtime" do
+    {:ok, runtime} = DenoRider.start_runtime() |> Task.await()
+    ## set some global state in runtime
+    DenoRider.eval("globalThis.foo = 999", runtime: runtime) |> Task.await()
+    {:ok, 999} = DenoRider.eval("globalThis.foo", runtime: runtime) |> Task.await()
+
+    {:ok, isolate1_id} = DenoRider.create_isolate(runtime, "isolate-1") |> Task.await()
+    ## this state is not shared with isolate-1
+    {:ok, nil} = DenoRider.eval_in_isolate(runtime, isolate1_id, "globalThis.foo") |> Task.await()
+
+    {:ok, isolate2_id} = DenoRider.create_isolate(runtime, "isolate-2") |> Task.await()
+    {:ok, _isolate3_id} = DenoRider.create_isolate(runtime, "isolate-3") |> Task.await()
+
+    DenoRider.dispose_isolate(runtime, isolate2_id) |> Task.await()
+  end
+
+  test "automatic runtime disposal" do
+    {:ok, runtime} = DenoRider.start_runtime() |> Task.await()
+    {:ok, isolate_id} = DenoRider.create_isolate(runtime, "isolate-1") |> Task.await()
+    {:ok, nil} = DenoRider.eval_in_isolate(runtime, isolate_id, "globalThis.foo") |> Task.await()
+  end
 end
