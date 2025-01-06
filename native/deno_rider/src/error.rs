@@ -1,4 +1,4 @@
-#[derive(Debug, rustler::NifStruct)]
+#[derive(Debug, rustler::NifException)]
 #[module = "DenoRider.Error"]
 pub struct Error {
     pub message: Option<std::string::String>,

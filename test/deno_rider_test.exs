@@ -105,41 +105,27 @@ defmodule DenoRiderTest do
   end
 
   test "eval with syntax error" do
-    assert(
-      {
-        :error,
-        %Error{
-          message: "Uncaught SyntaxError: Unexpected token ')'\n    at <anon>:1:1",
-          name: :execution_error
-        }
-      } = eval(")", blocking: true)
-    )
+    assert {:error, %Error{name: :execution_error} = error} = eval(")", blocking: true)
+
+    assert Exception.message(error) ==
+             "execution_error: Uncaught SyntaxError: Unexpected token ')'\n    at <anon>:1:1"
 
     assert {:ok, 3} = eval("1 + 2", blocking: true)
   end
 
   test "main module with syntax error" do
-    assert(
-      {
-        :error,
-        %Error{
-          message: "Uncaught SyntaxError: Unexpected token ')'\n    at file://" <> _,
-          name: :execution_error
-        }
-      } = start_runtime(main_module_path: "test/support/syntax_error.js") |> Task.await()
-    )
+    assert {:error, %Error{name: :execution_error} = error} =
+             start_runtime(main_module_path: "test/support/syntax_error.js") |> Task.await()
+
+    assert Exception.message(error) =~
+             "execution_error: Uncaught SyntaxError: Unexpected token ')'\n    at file:///"
   end
 
   test "non-existent main module" do
-    assert(
-      {
-        :error,
-        %Error{
-          message: "Failed to load file:///foo",
-          name: :execution_error
-        }
-      } = start_runtime(main_module_path: "/foo") |> Task.await()
-    )
+    assert {:error, %Error{name: :execution_error} = error} =
+             start_runtime(main_module_path: "/foo") |> Task.await()
+
+    assert Exception.message(error) == "execution_error: Failed to load file:///foo"
   end
 
   test "stop runtime" do
