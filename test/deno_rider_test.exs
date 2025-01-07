@@ -133,10 +133,15 @@ defmodule DenoRiderTest do
 
     assert {:ok, nil} = stop_runtime(runtime) |> Task.await()
 
-    assert {:error, %Error{name: :dead_runtime_error}} =
+    assert {:error, %Error{name: :dead_runtime_error} = error} =
              eval("1 + 2", blocking: true, runtime: runtime)
 
-    assert {:error, %Error{name: :dead_runtime_error}} = stop_runtime(runtime) |> Task.await()
+    assert Exception.message(error) == "dead_runtime_error"
+
+    assert {:error, %Error{name: :dead_runtime_error} = error} =
+             stop_runtime(runtime) |> Task.await()
+
+    assert Exception.message(error) == "dead_runtime_error"
   end
 
   @tag :panic
@@ -145,11 +150,15 @@ defmodule DenoRiderTest do
 
     # We currently don't support returning symbols, so we use that to make the
     # worker thread panic.
-    assert {:error, %Error{name: :execution_error}} =
+    assert {:error, %Error{name: :execution_error} = error} =
              eval("Symbol('foo')", blocking: true, runtime: runtime)
 
-    assert {:error, %Error{name: :dead_runtime_error}} =
+    assert Exception.message(error) == "execution_error"
+
+    assert {:error, %Error{name: :dead_runtime_error} = error} =
              eval("1 + 2", blocking: true, runtime: runtime)
+
+    assert Exception.message(error) == "dead_runtime_error"
   end
 
   @tag :benchmark
