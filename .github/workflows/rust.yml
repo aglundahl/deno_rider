@@ -5,4 +5,6 @@ jobs:
       - uses: "actions/checkout@v4"
       - run: "rustup component add rustfmt"
       - run: "cargo fmt --check --manifest-path native/deno_rider/Cargo.toml"
-on: ["push"]
+on:
+  - "pull_request"
+  - "push"
