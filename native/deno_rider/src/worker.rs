@@ -1,7 +1,6 @@
 use crate::atoms;
 use crate::error::Error;
 use deno_runtime::worker::MainWorker;
-use std::string::String;
 use tokio::sync::oneshot::Sender;
 
 pub enum Message {
@@ -58,7 +57,7 @@ pub async fn new(main_module_path: String) -> Result<MainWorker, Error> {
 pub async fn run(
     mut worker: MainWorker,
     mut worker_receiver: tokio::sync::mpsc::UnboundedReceiver<Message>,
-) -> () {
+) {
     let mut poll_worker = true;
     loop {
         tokio::select! {

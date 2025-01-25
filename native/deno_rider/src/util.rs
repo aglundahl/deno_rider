@@ -1,9 +1,8 @@
-pub fn send_to_pid<T>(
-    pid: &rustler::types::LocalPid,
-    data: T,
-) -> Result<(), rustler::env::SendError>
+use rustler::{Encoder, LocalPid, OwnedEnv};
+
+pub fn send_to_pid<T>(pid: &LocalPid, data: T)
 where
-    T: rustler::types::Encoder,
+    T: Encoder,
 {
-    rustler::OwnedEnv::new().send_and_clear(pid, |_env| data)
+    let _ = OwnedEnv::new().send_and_clear(pid, |_env| data);
 }

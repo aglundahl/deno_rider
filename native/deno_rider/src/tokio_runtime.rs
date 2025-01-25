@@ -1,8 +1,9 @@
-use once_cell::sync::Lazy;
+use std::sync::OnceLock;
 
-pub static RUNTIME: Lazy<tokio::runtime::Runtime> = Lazy::new(|| {
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-});
+use tokio::runtime::{Builder, Runtime};
+
+pub fn get() -> &'static Runtime {
+    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+
+    RUNTIME.get_or_init(|| Builder::new_multi_thread().enable_all().build().unwrap())
+}
