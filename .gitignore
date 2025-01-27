@@ -1,6 +1,7 @@
-/_build
+/_build/
 /checksum-Elixir.DenoRider.Native.exs
-/deps
-/doc
-/priv/native
-/priv/plts
+/deps/
+/doc/
+/priv/native/
+/priv/plts/
+/target/
