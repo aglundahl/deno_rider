@@ -45,16 +45,16 @@ defmodule DenoRiderTest do
   end
 
   test "state persistence" do
-    {:ok, runtime_1} = start_runtime() |> Task.await()
-    {:ok, runtime_2} = start_runtime() |> Task.await()
+    {:ok, pid_1} = start()
+    {:ok, pid_2} = start()
 
-    eval("globalThis.foo = 1", blocking: true, runtime: runtime_1)
-    eval("globalThis.foo = 2", blocking: true, runtime: runtime_2)
+    eval("globalThis.foo = 1", blocking: true, pid: pid_1)
+    eval("globalThis.foo = 2", blocking: true, pid: pid_2)
 
-    assert {:ok, 1} = eval("globalThis.foo", runtime: runtime_1) |> Task.await()
-    assert {:ok, 1} = eval("globalThis.foo", blocking: true, runtime: runtime_1)
-    assert {:ok, 2} = eval("globalThis.foo", runtime: runtime_2) |> Task.await()
-    assert {:ok, 2} = eval("globalThis.foo", blocking: true, runtime: runtime_2)
+    assert {:ok, 1} = eval("globalThis.foo", pid: pid_1)
+    assert {:ok, 1} = eval("globalThis.foo", blocking: true, pid: pid_1)
+    assert {:ok, 2} = eval("globalThis.foo", pid: pid_2)
+    assert {:ok, 2} = eval("globalThis.foo", blocking: true, pid: pid_2)
   end
 
   test "event loop" do
@@ -72,22 +72,16 @@ defmodule DenoRiderTest do
   end
 
   test "main module" do
-    {:ok, runtime} =
-      start_runtime(main_module_path: "test/support/main_module.js") |> Task.await()
+    {:ok, pid} = start(main_module_path: "test/support/main_module.js")
 
-    assert {:ok, "this is a main module"} =
-             eval("globalThis.foo", blocking: true, runtime: runtime)
-
-    assert {:ok, "this is from another tick"} =
-             eval("globalThis.bar", blocking: true, runtime: runtime)
+    assert {:ok, "this is a main module"} = eval("globalThis.foo", blocking: true, pid: pid)
+    assert {:ok, "this is from another tick"} = eval("globalThis.bar", blocking: true, pid: pid)
   end
 
   test "import files" do
-    {:ok, runtime} =
-      start_runtime(main_module_path: "test/support/import_files_a.js") |> Task.await()
+    {:ok, pid} = start(main_module_path: "test/support/import_files_a.js")
 
-    assert {:ok, "this is a file to import"} =
-             eval("globalThis.foo", blocking: true, runtime: runtime)
+    assert {:ok, "this is a file to import"} = eval("globalThis.foo", blocking: true, pid: pid)
   end
 
   test "read file" do
@@ -98,10 +92,10 @@ defmodule DenoRiderTest do
   end
 
   test "Node APIs" do
-    {:ok, runtime} = start_runtime(main_module_path: "test/support/node_apis.js") |> Task.await()
+    {:ok, pid} = start(main_module_path: "test/support/node_apis.js")
 
     assert {:ok, "this%20is%20converted%20using%20Node%20APIs"} =
-             eval("globalThis.foo", blocking: true, runtime: runtime)
+             eval("globalThis.foo", blocking: true, pid: pid)
   end
 
   test "eval with syntax error" do
@@ -115,50 +109,135 @@ defmodule DenoRiderTest do
 
   test "main module with syntax error" do
     assert {:error, %Error{name: :execution_error} = error} =
-             start_runtime(main_module_path: "test/support/syntax_error.js") |> Task.await()
+             start(main_module_path: "test/support/syntax_error.js")
 
     assert Exception.message(error) =~
              "execution_error: Uncaught SyntaxError: Unexpected token ')'\n    at file:///"
   end
 
   test "non-existent main module" do
-    assert {:error, %Error{name: :execution_error} = error} =
-             start_runtime(main_module_path: "/foo") |> Task.await()
-
+    assert {:error, %Error{name: :execution_error} = error} = start(main_module_path: "/foo")
     assert Exception.message(error) == "execution_error: Failed to load file:///foo"
   end
 
   test "stop runtime" do
-    {:ok, runtime} = start_runtime() |> Task.await()
+    {:ok, pid} = start()
 
-    assert {:ok, nil} = stop_runtime(runtime) |> Task.await()
+    assert :ok = stop(pid: pid)
+    assert Process.alive?(pid) == false
+  end
 
-    assert {:error, %Error{name: :dead_runtime_error} = error} =
-             eval("1 + 2", blocking: true, runtime: runtime)
+  describe "promises" do
+    test "resolve" do
+      assert {:ok, 3} = eval("new Promise((resolve) => { setTimeout(() => resolve(3), 100) })")
+    end
 
-    assert Exception.message(error) == "dead_runtime_error"
+    test "reject" do
+      assert {:error, %Error{name: :promise_rejection, value: 3} = error} =
+               eval("new Promise((_, reject) => { setTimeout(() => reject(3), 100) })")
 
-    assert {:error, %Error{name: :dead_runtime_error} = error} =
-             stop_runtime(runtime) |> Task.await()
+      assert Exception.message(error) == "promise_rejection"
+    end
 
-    assert Exception.message(error) == "dead_runtime_error"
+    test "already resolved" do
+      assert {:ok, 3} = eval("Promise.resolve(3)")
+    end
+
+    test "already rejected" do
+      assert {:error, %Error{name: :promise_rejection, value: 3} = error} =
+               eval("Promise.reject(3)")
+
+      assert Exception.message(error) == "promise_rejection"
+    end
+  end
+
+  describe "JavaScript API: apply" do
+    test "Elixir module" do
+      assert {:ok, 3} = eval("DenoRider.apply('Kernel', '+', [1, 2])")
+    end
+
+    test "Erlang module" do
+      assert {:ok, 3} = eval("DenoRider.apply(':math', 'floor', [3.14])")
+    end
+
+    test "round trip" do
+      {:ok, pid} = start()
+
+      assert {:ok, 3} = eval("DenoRider.apply('DenoRider', 'eval!', ['1 + 2'])", pid: pid)
+    end
+
+    test "HTTP server" do
+      {:ok, _} = start(main_module_path: "test/support/server.js")
+
+      assert {:ok, {_, _, ~c"Result: 3"}} = :httpc.request("http://localhost:3000")
+    end
+
+    test "without JSON encodable return value" do
+      assert {:error,
+              %Error{name: :promise_rejection, value: "Could not convert to JSON: {1, 2, 3}"} =
+                error} = eval("DenoRider.apply('List', 'to_tuple', [[1, 2, 3]])")
+
+      assert Exception.message(error) == "promise_rejection"
+    end
+
+    test "invalid module" do
+      assert {:error, %Error{name: :execution_error} = error} =
+               eval("DenoRider.apply(1, '+', [1, 2])")
+
+      assert Exception.message(error) ==
+               "execution_error: Error: Not a string: 1\n    at Object.apply (ext:extension/main.js:14:13)\n    at <anon>:1:11"
+
+      assert {:error,
+              %Error{name: :promise_rejection, value: "No existing atom: Elixir.Foo"} = error} =
+               eval("DenoRider.apply('Foo', '+', [1, 2])")
+
+      assert Exception.message(error) == "promise_rejection"
+    end
+
+    test "invalid function" do
+      assert {:error, %Error{name: :execution_error} = error} =
+               eval("DenoRider.apply('Kernel', 1, [1, 2])")
+
+      assert Exception.message(error) ==
+               "execution_error: Error: Not a string: 1\n    at Object.apply (ext:extension/main.js:17:13)\n    at <anon>:1:11"
+
+      assert {:error,
+              %Error{name: :promise_rejection, value: "No such function: Elixir.Kernel.foo/2"} =
+                error} = eval("DenoRider.apply('Kernel', 'foo', [1, 2])")
+
+      assert Exception.message(error) == "promise_rejection"
+    end
+
+    test "invalid args" do
+      assert {:error, %Error{name: :execution_error} = error} =
+               eval("DenoRider.apply('Kernel', '+', 1)")
+
+      assert Exception.message(error) ==
+               "execution_error: Error: Not an array: 1\n    at Object.apply (ext:extension/main.js:20:13)\n    at <anon>:1:11"
+
+      assert {:error,
+              %Error{name: :promise_rejection, value: "No such function: Elixir.Kernel.+/3"} =
+                error} = eval("DenoRider.apply('Kernel', '+', [1, 2, 3])")
+
+      assert Exception.message(error) == "promise_rejection"
+    end
   end
 
   @tag :panic
   test "kill runtime" do
-    {:ok, runtime} = start_runtime() |> Task.await()
+    {:ok, pid} = start()
 
     # We currently don't support returning symbols, so we use that to make the
     # worker thread panic.
     assert {:error, %Error{name: :execution_error} = error} =
-             eval("Symbol('foo')", blocking: true, runtime: runtime)
+             eval("Symbol('foo')", blocking: true, pid: pid)
 
     assert Exception.message(error) == "execution_error"
 
-    assert {:error, %Error{name: :dead_runtime_error} = error} =
-             eval("1 + 2", blocking: true, runtime: runtime)
+    assert {{:shutdown, :dead_runtime_error}, _} =
+             catch_exit(eval("1 + 2", blocking: true, pid: pid))
 
-    assert Exception.message(error) == "dead_runtime_error"
+    assert Process.alive?(pid) == false
   end
 
   @tag :benchmark

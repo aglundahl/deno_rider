@@ -16,11 +16,13 @@ defmodule DenoRider.Native do
     ],
     version: version
 
-  def start_runtime(_main_module_path), do: :erlang.nif_error(:nif_not_loaded)
+  def start_runtime(_pid, _main_module_path), do: :erlang.nif_error(:nif_not_loaded)
 
   def stop_runtime(_reference), do: :erlang.nif_error(:nif_not_loaded)
 
   def eval(_from, _reference, _code), do: :erlang.nif_error(:nif_not_loaded)
 
   def eval_blocking(_reference, _code), do: :erlang.nif_error(:nif_not_loaded)
+
+  def apply_reply(_reference, _application_id, _result), do: :erlang.nif_error(:nif_not_loaded)
 end

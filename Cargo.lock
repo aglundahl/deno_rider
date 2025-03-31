@@ -1732,6 +1732,7 @@ dependencies = [
  "rustler",
  "serde_json",
  "serde_v8",
+ "slab",
  "sys_traits",
  "tokio",
 ]

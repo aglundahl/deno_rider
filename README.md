@@ -63,20 +63,40 @@ See [`eval/1`](https://hexdocs.pm/deno_rider/DenoRider.html#eval/1) and
 [`eval/2`](https://hexdocs.pm/deno_rider/DenoRider.html#eval/2) for different
 ways of running JavaScript code.
 
-If you don't want to run DenoRider as a process, you can manage the runtime
-manually:
+If you don't want to run DenoRider as a linked process, you can manage the
+process manually:
 
 ```elixir
-iex> {:ok, runtime} = DenoRider.start_runtime() |> Task.await()
-{:ok, %DenoRider.Runtime{reference: #Reference<0.328177905.1027473408.14690>}}
-iex> DenoRider.eval("1 + 2", runtime: runtime) |> Task.await()
+iex> {:ok, pid} = DenoRider.start()
+{:ok, #PID<0.192.0>}
+iex> DenoRider.eval("1 + 2", pid: pid)
 {:ok, 3}
-iex> DenoRider.stop_runtime(runtime) |> Task.await()
-{:ok, nil}
+iex> DenoRider.stop(pid: pid)
+:ok
 ```
 
 Read the [full documentation](https://hexdocs.pm/deno_rider/DenoRider.html) for
 more information.
+
+### JavaScript API
+
+Inside the JavaScript runtime, DenoRider provides a JavaScript API under the
+global object `DenoRider`. Currently, `DenoRider.apply` is the only available
+function.
+
+#### `DenoRider.apply`
+
+Call an Elixir or Erlang function from JavaScript. Similarly to
+[`Kernel.apply/3`](https://hexdocs.pm/elixir/Kernel.html#apply/3), it take a
+module, a function and an array of arguments:
+
+```javascript
+await DenoRider.apply("Kernel", "+", [1, 2]); // 3
+await DenoRider.apply(":math", "floor", [3.14]); // 3
+```
+
+It returns a promise that resolves with the value returned from the Elixir
+function. Note that the return value needs to be JSON encodable.
 
 ## FAQ
 

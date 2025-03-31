@@ -5,12 +5,13 @@ defmodule DenoRider.Error do
 
   @type t :: %__MODULE__{}
 
-  defexception [:message, :name]
+  defexception [:message, :name, :value]
 
   def exception(opts) do
     %__MODULE__{
       message: Keyword.get(opts, :message),
-      name: Keyword.fetch!(opts, :name)
+      name: Keyword.fetch!(opts, :name),
+      value: Keyword.get(opts, :value)
     }
   end
 

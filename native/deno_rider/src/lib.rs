@@ -1,6 +1,7 @@
 mod atoms;
 mod error;
 mod runtime;
+mod runtimes;
 mod tokio_runtime;
 mod util;
 mod worker;
@@ -9,8 +10,9 @@ use rustler::Env;
 use rustler::ResourceArc;
 
 #[rustler::nif]
-fn start_runtime(env: Env, main_module_path: String) -> rustler::Atom {
-    let pid = env.pid();
+fn start_runtime(env: Env, pid: rustler::LocalPid, main_module_path: String) -> rustler::Atom {
+    let task_pid = env.pid();
+    let runtime_id = runtimes::get().lock().unwrap().insert(pid);
     let (worker_sender, worker_receiver) =
         tokio::sync::mpsc::unbounded_channel::<worker::Message>();
     std::thread::spawn(move || {
@@ -19,19 +21,19 @@ fn start_runtime(env: Env, main_module_path: String) -> rustler::Atom {
             .build()
             .unwrap()
             .block_on(async {
-                match worker::new(main_module_path).await {
+                match worker::new(runtime_id, main_module_path).await {
                     Ok(worker) => {
                         util::send_to_pid(
-                            &pid,
+                            &task_pid,
                             (
                                 atoms::ok(),
                                 ResourceArc::new(runtime::Runtime { worker_sender }),
                             ),
                         );
-                        worker::run(worker, worker_receiver).await;
+                        worker::run(runtime_id, worker, worker_receiver).await;
                     }
                     Err(message) => {
-                        util::send_to_pid(&pid, (atoms::error(), message));
+                        util::send_to_pid(&task_pid, (atoms::error(), message));
                     }
                 }
             });
@@ -59,6 +61,7 @@ fn stop_runtime(env: Env, resource: ResourceArc<runtime::Runtime>) -> rustler::A
                     error::Error {
                         message: None,
                         name: atoms::dead_runtime_error(),
+                        value: None,
                     },
                 ),
             );
@@ -89,12 +92,14 @@ fn eval(
                 Err(_) => Err(error::Error {
                     message: None,
                     name: atoms::execution_error(),
+                    value: None,
                 }),
             }
         } else {
             Err(error::Error {
                 message: None,
                 name: atoms::dead_runtime_error(),
+                value: None,
             })
         };
         let _ = from_env.send_and_clear(&pid, |env| {
@@ -116,14 +121,32 @@ fn eval_blocking(
         .or(Err(error::Error {
             message: None,
             name: atoms::dead_runtime_error(),
+            value: None,
         }))?;
     match response_receiver.blocking_recv() {
         Ok(result) => result,
         Err(_) => Err(error::Error {
             message: None,
             name: atoms::execution_error(),
+            value: None,
         }),
     }
+}
+
+#[rustler::nif]
+fn apply_reply(
+    resource: ResourceArc<runtime::Runtime>,
+    application_id: String,
+    result: Result<String, String>,
+) -> Result<(), error::Error> {
+    resource
+        .worker_sender
+        .send(worker::Message::ApplyReply(application_id, result))
+        .or(Err(error::Error {
+            message: None,
+            name: atoms::dead_runtime_error(),
+            value: None,
+        }))
 }
 
 rustler::init!("Elixir.DenoRider.Native");
