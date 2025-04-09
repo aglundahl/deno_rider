@@ -129,6 +129,7 @@ defmodule DenoRider do
       `DenoRider`. Can't be provided if `:pid` is provided.
     * `:pid` - The pid of the DenoRider process. Can't be provided if `:name` is
       provided.
+    * `:timeout` - The timeout for the eval, default is `5000`.
 
   ## Examples
 
@@ -150,7 +151,8 @@ defmodule DenoRider do
   def eval(code, opts) do
     GenServer.call(
       Keyword.get(opts, :pid) || Keyword.get(opts, :name, __MODULE__),
-      {:eval, code, opts}
+      {:eval, code, opts},
+      Keyword.get(opts, :timeout, 5000)
     )
   end
 
