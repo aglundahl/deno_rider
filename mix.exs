@@ -46,7 +46,7 @@ defmodule DenoRider.MixProject do
       ],
       source_url: "https://github.com/aglundahl/deno_rider",
       start_permanent: Mix.env() == :prod,
-      version: "0.2.0"
+      version: "0.3.0"
     ]
   end
 

@@ -40,6 +40,12 @@ targets:
 * `x86_64-apple-darwin`
 * `x86_64-pc-windows-msvc`
 * `x86_64-unknown-linux-gnu`
+* `x86_64_unknown-linux-gnu--use_old_glibc`
+  * If you need an older version of glibc set the config variable `use_old_glibc` like so:
+  ```elixir
+  config :deno_rider, use_old_glibc: true
+  ```
+  this is built with ubuntu 22.04 and helps avoid this [issue](https://github.com/aglundahl/deno_rider/issues/4).
 
 Contributions for precompiling DenoRider to more targets are welcome!
 
