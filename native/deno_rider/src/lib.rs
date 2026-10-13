@@ -22,12 +22,16 @@ fn start_runtime(env: Env, pid: rustler::LocalPid, main_module_path: String) -> 
             .unwrap()
             .block_on(async {
                 match worker::new(runtime_id, main_module_path).await {
-                    Ok(worker) => {
+                    Ok(mut worker) => {
+                        let isolate_handle = worker.js_runtime.v8_isolate().thread_safe_handle();
                         util::send_to_pid(
                             &task_pid,
                             (
                                 atoms::ok(),
-                                ResourceArc::new(runtime::Runtime { worker_sender }),
+                                ResourceArc::new(runtime::Runtime {
+                                    worker_sender,
+                                    isolate_handle,
+                                }),
                             ),
                         );
                         worker::run(runtime_id, worker, worker_receiver).await;
